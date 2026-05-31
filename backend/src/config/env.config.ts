@@ -9,6 +9,7 @@ const envSchema = z.object({
     VALKEY_PORT: z.coerce.number().default(6379),
     OPENAI_API_KEY: z.string().min(1, "OPENAI_API_KEY is required"),
     QDRANT_URL: z.string().url("QDRANT_URL must be a valid URL"),
+    QDRANT_COLLECTION_NAME: z.string()
 });
 
 const parsed = envSchema.safeParse(process.env);
