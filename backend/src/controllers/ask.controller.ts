@@ -1,11 +1,10 @@
 import type { Request, Response } from "express";
 import { askToRagStream } from "../services/rag.service";
-import { parseStringQuery, parseIntQuery } from "../validators/ingest.validator";
 
 export const askQuestion = async (req: Request, res: Response): Promise<void> => {
     try {
-        const question = parseStringQuery(req.query.question, "question");
-        const topK = parseIntQuery(req.query.topK, "topK");
+        
+        const { question, topK } = req.body;
 
         // SSE headers
         res.setHeader("Content-Type", "text/event-stream");
