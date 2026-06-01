@@ -8,3 +8,17 @@ export const DEFAULTS = {
 } as const;
 
 export const DOC_SEPARATOR = "\n\n---\n\n";
+
+export const CHUNKING = {
+    chunkSize: 1000,
+    chunkOverlap: 200,
+} as const;
+
+export const QDRANT = {
+    collectionName: "pdf-docs",
+} as const;
+
+export const WORKER = {
+    concurrency: 3,
+    batchSize: 100,
+} as const;

@@ -1,20 +1,28 @@
 import { QdrantVectorStore } from "@langchain/qdrant";
 import { embeddings } from "./embeddings.service";
 import { env } from "../config/env.config";
+import { QDRANT, WORKER } from "../utils/constant";
+import type { Document } from "langchain";
 
-let vectorStore: QdrantVectorStore | null = null;
-
-export const getVectorStore = async () => {
-    if (vectorStore) {
-        return vectorStore;
-    }
-
-    vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
+export const getVectorStore = (): Promise<QdrantVectorStore> => {
+    return QdrantVectorStore.fromExistingCollection(embeddings, {
         url: env.QDRANT_URL,
-        collectionName: env.QDRANT_COLLECTION_NAME ?? "pdf-docs",
+        collectionName: QDRANT.collectionName,
     });
-
-    return vectorStore;
 };
 
+export const addChunks = async (
+    chunks: Document[],
+    onBatchComplete?: (batchNumber: number, totalBatches: number) => void,
+): Promise<void> => {
+    const vectorStore = await getVectorStore();
+    const totalBatches = Math.ceil(chunks.length / WORKER.batchSize);
 
+    for (let i = 0; i < chunks.length; i += WORKER.batchSize) {
+        const batch = chunks.slice(i, i + WORKER.batchSize);
+        await vectorStore.addDocuments(batch);
+
+        const batchNumber = Math.ceil(i / WORKER.batchSize) + 1;
+        onBatchComplete?.(batchNumber, totalBatches);
+    }
+};
