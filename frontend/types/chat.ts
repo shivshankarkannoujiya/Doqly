@@ -1,8 +1,24 @@
 export interface SourceDoc {
-  id: string;
-  pageNumber?: number;
-  content: string;
+  pageContent: string;
   score?: number;
+
+  metadata?: {
+    source?: string;
+
+    loc?: {
+      pageNumber?: number;
+
+      lines?: {
+        from: number;
+        to: number;
+      };
+    };
+
+    chunkIndex?: number;
+    totalChunks?: number;
+    fileUrl?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface ChatMessage {

@@ -3,12 +3,12 @@ import { ChatContainer } from "@/components/chat/chat-container";
 
 export function AppShell() {
   return (
-    <main className="h-screen flex overflow-hidden">
+    <div className="h-screen flex overflow-hidden bg-background">
       <Sidebar />
 
-      <div className="flex-1">
+      <main className="flex-1 overflow-hidden">
         <ChatContainer />
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

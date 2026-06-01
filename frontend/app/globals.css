@@ -128,3 +128,12 @@
     @apply font-sans;
   }
 }
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: #09090b;
+  color: #fafafa;
+}
