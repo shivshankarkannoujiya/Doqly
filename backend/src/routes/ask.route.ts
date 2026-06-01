@@ -3,6 +3,6 @@ import { askQuestion } from "../controllers/ask.controller";
 
 const router = Router();
 
-router.route("/").get(askQuestion);
+router.route("/").post(askQuestion);
 
 export default router;

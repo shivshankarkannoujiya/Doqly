@@ -11,6 +11,7 @@ import {
 import { addChunks } from "../services/qdrant.service";
 
 export const processPdfJob = async (job: Job): Promise<void> => {
+    console.log(`🔥 Processing Job ${job.id}`);
     const data = parseJobData(job.data);
     const absolutePath = resolveAbsolutePath(data.path);
 
