@@ -1,81 +1,106 @@
 import { openai } from "./openai.service";
+import { buildContext, buildMessages, makeError, toSourceDoc } from "../utils/rag.utils";
 import { getVectorStore } from "./qdrant.service";
-import { composeSystemPrompt } from "../prompts/rag.prompt";
 import type { Document } from "@langchain/core/documents";
-import type { RagStreamOptions, StreamChunk } from "../types/rag.types";
+import type { RagStreamOptions, StreamChunk, SourceDoc } from "../types/rag.types";
+import { DEFAULTS } from "../utils/constant";
+
+const retrieveDocs = async (
+    question: string,
+    topK: number,
+    scoreThreshold: number,
+): Promise<{ docs: Document[]; scored: SourceDoc[] }> => {
+    const store = await getVectorStore();
+
+    const raw: Array<[Document, number]> = await store
+        .similaritySearchWithScore(question, topK)
+        .catch(() =>
+            store
+                .asRetriever({ k: topK })
+                .invoke(question)
+                .then((docs) => docs.map((d) => [d, 1] as [Document, number])),
+        );
+
+    const filtered = raw.filter(([, score]) => score >= scoreThreshold);
+
+    return {
+        docs: filtered.map(([doc]) => doc),
+        scored: filtered.map(([doc, score]) => toSourceDoc(doc, score)),
+    };
+};
 
 export async function* askToRagStream(options: RagStreamOptions): AsyncGenerator<StreamChunk> {
-    const { question, topK = 4 } = options;
+    const {
+        question,
+        topK = DEFAULTS.TOP_K,
+        scoreThreshold = DEFAULTS.SCORE_THRESHOLD,
+        conversationHistory = [],
+    } = options;
 
     if (!question.trim()) {
-        yield {
-            type: "error",
-            message: "Question cannot be empty",
-        };
+        yield makeError("Question cannot be empty", "EMPTY_QUESTION");
         return;
     }
+
+    // Retrieval phase
+    yield { type: "retrieval_start" };
 
     let docs: Document[];
+    let scoredDocs: SourceDoc[];
 
     try {
-        const store = await getVectorStore();
-
-        const retriever = store.asRetriever({
-            k: topK,
-        });
-
-        docs = await retriever.invoke(question);
+        ({ docs, scored: scoredDocs } = await retrieveDocs(question, topK, scoreThreshold));
     } catch (error) {
-        yield {
-            type: "error",
-            message: "Failed to retrieve documents",
-        };
+        console.error("[RAG] Retrieval error:", error);
+        yield makeError("Failed to retrieve documents", "RETRIEVAL_FAILED");
         return;
     }
 
-    const context = docs.map((doc) => doc.pageContent).join("\n\n---\n\n");
+    if (docs.length === 0) {
+        yield makeError("No relevant documents found", "NO_DOCS_FOUND");
+        return;
+    }
+
+    yield { type: "retrieval_done", docCount: docs.length };
+
+    // Context assembly
+    let context = buildContext(docs);
+
+    if (context.length > DEFAULTS.MAX_CONTEXT_CHARS) {
+        console.warn(
+            `[RAG] Context truncated: ${context.length} → ${DEFAULTS.MAX_CONTEXT_CHARS} chars`,
+        );
+
+        context = context.slice(0, DEFAULTS.MAX_CONTEXT_CHARS);
+    }
+
+    // LLM streaming phase
 
     try {
         const stream = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: DEFAULTS.MODEL,
             stream: true,
-            temperature: 0.2,
-            max_tokens: 1024,
-            messages: [
-                {
-                    role: "system",
-                    content: composeSystemPrompt(context),
-                },
-                {
-                    role: "user",
-                    content: question,
-                },
-            ],
+            temperature: DEFAULTS.TEMPERATURE,
+            max_completion_tokens: DEFAULTS.MAX_TOKENS,
+            messages: buildMessages(context, question, conversationHistory),
         });
 
         for await (const chunk of stream) {
-            const token = chunk.choices[0]?.delta?.content;
-
+            const token = chunk.choices[0]?.delta.content;
             if (token) {
-                yield {
-                    type: "token",
-                    token,
-                };
+                yield { type: "token", token };
+            }
+
+            const finishReason = chunk.choices[0]?.finish_reason;
+            if (finishReason && finishReason !== "stop") {
+                console.warn(`[RAG] Stream ended with reason: ${finishReason}`);
             }
         }
-    } catch {
-        yield {
-            type: "error",
-            message: "LLM generation failed",
-        };
+    } catch (error) {
+        console.error("[RAG] LLM error:", error);
+        yield makeError("LLM generation failed", "LLM_FAILED");
         return;
     }
 
-    yield {
-        type: "done",
-        docs: docs.map((doc) => ({
-            pageContent: doc.pageContent,
-            metadata: doc.metadata,
-        })),
-    };
+    yield { type: "done", docs: scoredDocs };
 }
