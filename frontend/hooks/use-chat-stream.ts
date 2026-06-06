@@ -92,13 +92,21 @@ export function useChatStream() {
               return;
 
             case "error":
-              throw new Error(payload.message ?? "Stream failed");
+              const errorMsg = payload.message ?? "Stream failed";
+              updateMessage(assistantId, `❌ ${errorMsg}`);
+              throw new Error(errorMsg);
 
             default:
               console.log("Unknown SSE event:", payload);
           }
         } catch (error) {
-          console.error("Failed to parse SSE payload:", error);
+          if (error instanceof Error && error.message.includes("No relevant documents found")) {
+            const userMsg = "Please upload a PDF document first to ask questions. You can upload documents from the sidebar.";
+            updateMessage(assistantId, `❌ ${userMsg}`);
+          } else if (!(error instanceof Error) || !error.message.includes("❌")) {
+            console.error("Failed to parse SSE payload:", error);
+          }
+          throw error;
         }
       }
     }

@@ -3,7 +3,7 @@ import { buildContext, buildMessages, makeError, toSourceDoc } from "../utils/ra
 import { getVectorStore } from "./qdrant.service";
 import type { Document } from "@langchain/core/documents";
 import type { RagStreamOptions, StreamChunk, SourceDoc } from "../types/rag.types";
-import { DEFAULTS, DOC_SEPARATOR } from "../utils/constant";
+import { DEFAULTS } from "../utils/constant";
 
 const retrieveDocs = async (
     question: string,
@@ -12,21 +12,30 @@ const retrieveDocs = async (
 ): Promise<{ docs: Document[]; scored: SourceDoc[] }> => {
     const store = await getVectorStore();
 
-    let raw: Array<[Document, number]>;
-    
-    try {
-        raw = await store.similaritySearchWithScore(question, topK);
-    } catch (error) {
-        console.warn("[RAG] similaritySearchWithScore failed, falling back to basic retrieval:", error);
-        const docs = await store.asRetriever({ k: topK }).invoke(question);
-        raw = docs.map((d) => [d, 0.5] as [Document, number]);
-    }
+    const raw: Array<[Document, number]> = await store
+        .similaritySearchWithScore(question, topK)
+        .catch(() =>
+            store
+                .asRetriever({ k: topK })
+                .invoke(question)
+                .then((docs) => docs.map((d) => [d, 1] as [Document, number])),
+        );
+
 
     const filtered = raw.filter(([, score]) => score >= scoreThreshold);
 
+    const unique = Array.from(
+        new Map(
+            filtered.map(([doc, score]) => [
+                `${doc.metadata.page}-${doc.pageContent}`,
+                [doc, score] as [Document, number],
+            ]),
+        ).values(),
+    );
+    
     return {
-        docs: filtered.map(([doc]) => doc),
-        scored: filtered.map(([doc, score]) => toSourceDoc(doc, score)),
+        docs: unique.map(([doc]) => doc),
+        scored: unique.map(([doc, score]) => toSourceDoc(doc, score)),
     };
 };
 
@@ -64,36 +73,19 @@ export async function* askToRagStream(options: RagStreamOptions): AsyncGenerator
 
     yield { type: "retrieval_done", docCount: docs.length };
 
-    // Context assembly - filter by scores instead of naive truncation
-    let contextDocs = docs;
-    let context = buildContext(contextDocs);
+    // Context assembly
+    let context = buildContext(docs);
 
     if (context.length > DEFAULTS.MAX_CONTEXT_CHARS) {
         console.warn(
-            `[RAG] Context too large (${context.length} chars), removing lowest-scoring documents...`,
+            `[RAG] Context truncated: ${context.length} → ${DEFAULTS.MAX_CONTEXT_CHARS} chars`,
         );
-        
-        // Sort by score descending and keep highest-scoring docs
-        const docsWithScores = scoredDocs.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-        let trimmedContext = "";
-        const trimmedDocs = [];
 
-        for (const doc of docsWithScores) {
-            const testContext = trimmedContext + (trimmedContext ? DOC_SEPARATOR : "") + `[${trimmedDocs.length + 1}] ${doc.pageContent.trim()}`;
-            if (testContext.length > DEFAULTS.MAX_CONTEXT_CHARS) break;
-            trimmedContext = testContext;
-            trimmedDocs.push(doc);
-        }
-
-        context = trimmedContext;
-        contextDocs = trimmedDocs.map((d) => ({ pageContent: d.pageContent, metadata: d.metadata } as Document));
-        
-        console.log(
-            `[RAG] Context reduced: ${scoredDocs.length} → ${contextDocs.length} docs, ${buildContext(docs).length} → ${context.length} chars`,
-        );
+        context = context.slice(0, DEFAULTS.MAX_CONTEXT_CHARS);
     }
 
     // LLM streaming phase
+
     try {
         const stream = await openai.chat.completions.create({
             model: DEFAULTS.MODEL,

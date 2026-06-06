@@ -3,7 +3,7 @@ export const DEFAULTS = {
     TEMPERATURE: 0.2,
     MAX_TOKENS: 1024,
     MODEL: "gpt-4o-mini",
-    SCORE_THRESHOLD: 0.5,
+    SCORE_THRESHOLD: 0,
     MAX_CONTEXT_CHARS: 12_000,
 } as const;
 

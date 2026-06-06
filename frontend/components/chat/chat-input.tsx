@@ -26,6 +26,8 @@ export function ChatInput() {
       });
 
       setQuestion("");
+    } catch (error) {
+      console.error("Chat error:", error);
     } finally {
       setLoading(false);
     }
