@@ -85,7 +85,7 @@ export function useChatStream() {
               break;
 
             case "done":
-              if (payload.docs) {
+              if (payload.docs?.length > 0) {
                 setSources(assistantId, payload.docs);
               }
 
@@ -100,11 +100,14 @@ export function useChatStream() {
               console.log("Unknown SSE event:", payload);
           }
         } catch (error) {
-          if (error instanceof Error && error.message.includes("No relevant documents found")) {
-            const userMsg = "Please upload a PDF document first to ask questions. You can upload documents from the sidebar.";
-            updateMessage(assistantId, `❌ ${userMsg}`);
-          } else if (!(error instanceof Error) || !error.message.includes("❌")) {
-            console.error("Failed to parse SSE payload:", error);
+          if (
+            error instanceof Error &&
+            error.message.includes("uploaded document")
+          ) {
+            updateMessage(
+              assistantId,
+              "This information is not present in the uploaded PDF.",
+            );
           }
           throw error;
         }

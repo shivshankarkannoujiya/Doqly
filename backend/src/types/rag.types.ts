@@ -21,9 +21,19 @@ export interface RagStreamOptions {
 
 export type Message = { role: "user" | "assistant"; content: string };
 
+interface SourceMetadata {
+    source?: string;
+    fileUrl?: string;
+    chunkIndex?: number;
+    totalChunks?: number;
+    loc?: {
+        pageNumber?: number;
+    };
+}
+
 export interface SourceDoc {
     pageContent: string;
-    metadata: Record<string, unknown>;
+    metadata: SourceMetadata;
     score?: number;
 }
 
